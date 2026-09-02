@@ -1,0 +1,52 @@
+# =============================================================
+#  Instagram Reel Scraper & Transcription Engine — docker-compose
+# =============================================================
+
+services:
+  # -----------------------------------------------------------
+  # API — Stage 1: Metadata Extraction
+  # -----------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: insta-scraper-api:latest
+    container_name: insta_scraper_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://admin:admin123@redis:6379/0}
+      - API_KEY=${API_KEY:-my_instagram_scraper_secret_key_123}
+      - TIMEOUT_MS=${TIMEOUT_MS:-30000}
+      - HEADLESS=${HEADLESS:-true}
+      - STORAGE_DIR=${STORAGE_DIR:-/app/storage}
+    volumes:
+      - storage:/app/storage
+    networks:
+      - external_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+# =============================================================
+# Volumes
+# =============================================================
+volumes:
+  storage:
+    driver: local
+
+# =============================================================
+# Networks
+# Connected to existing external network where Redis is running
+# =============================================================
+networks:
+  external_network:
+    name: ${DOCKER_NETWORK:-postgres-network}
+    external: true

@@ -1,1 +1,29 @@
+# Environment — never commit real keys
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Databases & local storage
+*.db
+*.sqlite
+*.sqlite3
+storage/video/*
+!storage/video/.gitkeep
+storage/audio/*
+!storage/audio/.gitkeep
+storage/downloads/*
+!storage/downloads/.gitkeep
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
