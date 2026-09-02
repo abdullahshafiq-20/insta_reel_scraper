@@ -67,8 +67,6 @@ class JobCreate(BaseModel):
     )
 
 
-from typing import Any, Dict, List, Optional, Union
-
 class JobQueued(BaseModel):
     """Immediate 202 response returned when a job is submitted."""
     success: bool = True
@@ -76,7 +74,6 @@ class JobQueued(BaseModel):
     status: JobStatus
     stage: JobStage
     created_at: datetime
-    created_at: Union[datetime, str]
 
 
 class JobStatusResponse(BaseModel):
@@ -89,9 +86,6 @@ class JobStatusResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-    created_at: Union[datetime, str]
-    updated_at: Optional[Union[datetime, str]] = None
-    completed_at: Optional[Union[datetime, str]] = None
     # Populated once stage=metadata_extracted (Stage 1 complete)
     metadata: Optional[ReelMetadata] = None
     # Populated in later stages
