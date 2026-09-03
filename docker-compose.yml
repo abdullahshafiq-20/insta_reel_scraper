@@ -20,6 +20,14 @@ services:
         required: false
     environment:
       - REDIS_URL=${REDIS_URL:-redis://admin:admin123@redis:6379/0}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://admin:admin@postgres:5432/insta_reel_scraper}
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-admin}
+      - POSTGRES_DB=${POSTGRES_DB:-insta_reel_scraper}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
       - API_KEY=${API_KEY:-my_instagram_scraper_secret_key_123}
       - TIMEOUT_MS=${TIMEOUT_MS:-30000}
       - HEADLESS=${HEADLESS:-true}

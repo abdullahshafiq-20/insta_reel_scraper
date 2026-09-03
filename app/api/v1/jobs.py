@@ -124,6 +124,8 @@ async def get_job(
         updated_at=record.get("updated_at"),
         completed_at=record.get("completed_at"),
         metadata=meta_obj,
+        video_path=record.get("video_path"),
+        audio_path=record.get("audio_path"),
         transcription=record.get("transcription"),
         error=record.get("error_message"),
     )

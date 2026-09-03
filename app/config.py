@@ -18,10 +18,17 @@ class Settings(BaseSettings):
     # Transcription
     TRANSCRIPTION_PROVIDER: str = "openai"  # "local" | "openai"
     OPENAI_API_KEY: str = ""
+    OPENAI_TRANSCRIPTION_MODEL: str = "whisper-1"
+    TRANSCRIPTION_COST_PER_MINUTE: float = 0.0045
     LOCAL_WHISPER_MODEL: str = "base"
 
     # Database & Redis
-    DATABASE_URL: str = "sqlite+aiosqlite:///./jobs.db"
+    POSTGRES_USER: str = "admin"
+    POSTGRES_PASSWORD: str = "admin"
+    POSTGRES_DB: str = "insta_reel_scraper"
+    POSTGRES_HOST: str = "postgres"
+    POSTGRES_PORT: int = 5432
+    DATABASE_URL: str = "postgresql://admin:admin@postgres:5432/insta_reel_scraper"
     REDIS_URL: str = "redis://admin:admin123@redis:6379/0"
     DOCKER_NETWORK: str = "postgres-network"
 

@@ -33,8 +33,10 @@ async def lifespan(app: FastAPI):
     logger.info("Startup — initialising browser pool…")
     await browser_pool.start()
     yield
-    logger.info("Shutdown — closing browser pool…")
+    logger.info("Shutdown — closing browser pool and db pool…")
     await browser_pool.close()
+    from app.db.repository import job_repo
+    await job_repo.close()
 
 
 app = FastAPI(
