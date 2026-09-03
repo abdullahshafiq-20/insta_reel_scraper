@@ -16,6 +16,7 @@ from app.db.repository import job_repo
 from app.schemas.job import JobStage, JobStatus
 from app.services.media.audio_converter import audio_converter
 from app.services.media.downloader import downloader
+from app.services.ocr.paddle_ocr_service import paddle_ocr_service
 from app.services.scraper.instagram_post_scraper import get_instagram_post_scraper
 from app.services.scraper.instagram_scraper import get_instagram_scraper
 from app.services.transcription.openai_whisper import openai_transcription_service
@@ -29,51 +30,155 @@ async def process_scrape_job(
     job_id: str,
     url: str,
     webhook_url: Optional[str] = None,
+    resume: bool = False,
 ) -> None:
     effective_webhook = (webhook_url or settings.WEBHOOK_URL or "").strip() or None
     content_type = get_instagram_url_type(url)
-    logger.info("Pipeline started for job %s (url=%s, type=%s, webhook=%s)", job_id, url, content_type, effective_webhook)
+    logger.info("Pipeline started for job %s (url=%s, type=%s, resume=%s, webhook=%s)", job_id, url, content_type, resume, effective_webhook)
 
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
 
     try:
-        # 1. INITIALIZE JOB
+        # 1. INITIALIZE / RESUME JOB
+        initial_stage = JobStage.INITIALIZED.value
         await job_repo.update_job(
             job_id,
             status=JobStatus.PROCESSING.value,
-            stage=JobStage.INITIALIZED.value,
+            stage=initial_stage,
+            content_type=content_type,
         )
         await dispatcher.dispatch(
             webhook_url=effective_webhook,
             event="job.stage_updated",
             job_id=job_id,
             status=JobStatus.PROCESSING.value,
-            stage=JobStage.INITIALIZED.value,
-            data={"content_type": content_type},
+            stage=initial_stage,
+            data={"content_type": content_type, "resumed": resume},
         )
 
         # -------------------------------------------------------------
-        # BRANCH A: INSTAGRAM POST / CAROUSEL PIPELINE
+        # BRANCH A: INSTAGRAM POST / CAROUSEL PIPELINE + OCR
         # -------------------------------------------------------------
         if content_type == "post":
-            logger.info("[Job %s] Running Post/Carousel scraper", job_id)
-            post_scraper = get_instagram_post_scraper()
-            post_metadata = await post_scraper.scrape(url)
+            existing_record = await job_repo.get_job(job_id) if resume else None
+            post_metadata = existing_record.get("metadata") if existing_record else None
+
+            # Stage 1: Extract post metadata and carousel images if needed
+            if not post_metadata or not post_metadata.get("images"):
+                logger.info("[Job %s] Running Post/Carousel scraper", job_id)
+                post_scraper = get_instagram_post_scraper()
+                post_metadata = await post_scraper.scrape(url)
+
+                await job_repo.update_job(
+                    job_id,
+                    status=JobStatus.PROCESSING.value,
+                    stage=JobStage.METADATA_EXTRACTED.value,
+                    metadata=post_metadata,
+                )
+                await dispatcher.dispatch(
+                    webhook_url=effective_webhook,
+                    event="job.stage_updated",
+                    job_id=job_id,
+                    status=JobStatus.PROCESSING.value,
+                    stage=JobStage.METADATA_EXTRACTED.value,
+                    data={"metadata": post_metadata},
+                )
+            else:
+                logger.info("[Job %s] Resuming post with %d existing images", job_id, len(post_metadata.get("images", [])))
+
+            # Stage 2: PaddleOCR Per-Image Extraction (Incremental & Resumable)
+            images = post_metadata.get("images", [])
+            total_images = len(images) if images else 1
+
+            existing_ocr = (existing_record.get("ocr") or {}) if existing_record else {}
+            completed_slides: dict = {
+                item["index"]: item for item in existing_ocr.get("slides", []) if "index" in item
+            }
+
+            logger.info(
+                "[Job %s] Starting PaddleOCR phase (%d total images, %d already processed)",
+                job_id,
+                total_images,
+                len(completed_slides),
+            )
+
+            for img_item in images:
+                idx = img_item.get("index", 1)
+                img_src = img_item.get("src")
+                if not img_src:
+                    continue
+
+                if idx in completed_slides:
+                    logger.info("[Job %s] Image %d already OCR processed; skipping", job_id, idx)
+                    continue
+
+                logger.info("[Job %s] OCR processing image %d/%d", job_id, idx, total_images)
+                slide_ocr = await paddle_ocr_service.extract_text_from_url(
+                    image_url=img_src,
+                    job_id=job_id,
+                    index=idx,
+                )
+                completed_slides[idx] = slide_ocr
+
+                # Immediately commit partial OCR state to database
+                partial_ocr_payload = {
+                    "total_images": total_images,
+                    "completed_count": len(completed_slides),
+                    "slides": sorted(completed_slides.values(), key=lambda x: x["index"]),
+                }
+                await job_repo.update_job(
+                    job_id,
+                    status=JobStatus.PROCESSING.value,
+                    stage=JobStage.OCR_PROCESSING.value,
+                    ocr=partial_ocr_payload,
+                )
+
+                # Real-time webhook progress for this image index
+                await dispatcher.dispatch(
+                    webhook_url=effective_webhook,
+                    event="job.stage_updated",
+                    job_id=job_id,
+                    status=JobStatus.PROCESSING.value,
+                    stage=JobStage.OCR_PROCESSING.value,
+                    data={
+                        "image_index": idx,
+                        "total_images": total_images,
+                        "image_url": img_src,
+                        "extracted_texts": slide_ocr["texts"],
+                        "full_text": slide_ocr["full_text"],
+                        "completed_count": len(completed_slides),
+                    },
+                )
+
+            # Stage 3: Final Aggregation & Completion
+            all_slides = sorted(completed_slides.values(), key=lambda x: x["index"])
+            combined_text = "\n\n".join(
+                [f"--- Image {s['index']} ---\n{s['full_text']}" for s in all_slides if s.get("full_text")]
+            )
+            final_ocr_payload = {
+                "total_images": total_images,
+                "combined_text": combined_text,
+                "slides": all_slides,
+            }
+            final_post_data = {
+                "metadata": post_metadata,
+                "ocr": final_ocr_payload,
+            }
 
             await job_repo.update_job(
                 job_id,
                 status=JobStatus.COMPLETED.value,
                 stage=JobStage.FINISHED.value,
-                metadata=post_metadata,
+                ocr=final_ocr_payload,
                 completed=True,
                 webhook_status="sent",
             )
 
             logger.info(
-                "[Job %s] Post pipeline completed successfully (%d images). Emitting final webhook",
+                "[Job %s] Post pipeline with OCR completed successfully (%d images). Emitting final webhook",
                 job_id,
-                post_metadata.get("total_images", 1),
+                total_images,
             )
             await dispatcher.dispatch(
                 webhook_url=effective_webhook,
@@ -81,7 +186,7 @@ async def process_scrape_job(
                 job_id=job_id,
                 status=JobStatus.COMPLETED.value,
                 stage=JobStage.FINISHED.value,
-                data=post_metadata,
+                data=final_post_data,
             )
             return
 

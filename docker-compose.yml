@@ -34,6 +34,8 @@ services:
       - STORAGE_DIR=${STORAGE_DIR:-/app/storage}
     volumes:
       - storage:/app/storage
+      - /home/narcolux/.paddlex:/root/.paddlex
+      - /home/narcolux/.paddleocr:/root/.paddleocr
     networks:
       - external_network
     healthcheck:

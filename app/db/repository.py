@@ -71,8 +71,17 @@ class JobRepository:
         else:
             data["transcription"] = trans
 
+        ocr = data.get("ocr_json")
+        if isinstance(ocr, str):
+            try:
+                data["ocr"] = json.loads(ocr)
+            except Exception:
+                data["ocr"] = None
+        else:
+            data["ocr"] = ocr
+
         # Convert timestamps to ISO string if datetime
-        for ts_field in ("created_at", "updated_at", "completed_at"):
+        for ts_field in ("created_at", "updated_at", "completed_at", "last_resumed_at"):
             val = data.get(ts_field)
             if isinstance(val, datetime):
                 data[ts_field] = val.isoformat()
@@ -83,6 +92,7 @@ class JobRepository:
         self,
         job_id: str,
         url: str,
+        content_type: str = "reel",
         transcription_provider: Optional[str] = None,
         webhook_url: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
@@ -91,10 +101,10 @@ class JobRepository:
 
         query = """
             INSERT INTO jobs (
-                id, url, status, stage, current_queue,
+                id, url, content_type, status, stage, current_queue,
                 transcription_provider, webhook_url, webhook_status,
                 created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *;
         """
         async with pool.acquire() as conn:
@@ -102,6 +112,7 @@ class JobRepository:
                 query,
                 job_id,
                 url,
+                content_type,
                 "queued",
                 "initialized",
                 "scrape_queue",
@@ -125,11 +136,13 @@ class JobRepository:
         job_id: str,
         status: Optional[str] = None,
         stage: Optional[str] = None,
+        content_type: Optional[str] = None,
         current_queue: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         video_path: Optional[str] = None,
         audio_path: Optional[str] = None,
         transcription: Optional[Dict[str, Any]] = None,
+        ocr: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         completed: bool = False,
         webhook_status: Optional[str] = None,
@@ -149,6 +162,11 @@ class JobRepository:
         if stage is not None:
             set_clauses.append(f"stage = ${param_idx}")
             params.append(stage)
+            param_idx += 1
+
+        if content_type is not None:
+            set_clauses.append(f"content_type = ${param_idx}")
+            params.append(content_type)
             param_idx += 1
 
         if current_queue is not None:
@@ -176,6 +194,11 @@ class JobRepository:
             params.append(json.dumps(transcription))
             param_idx += 1
 
+        if ocr is not None:
+            set_clauses.append(f"ocr_json = ${param_idx}")
+            params.append(json.dumps(ocr))
+            param_idx += 1
+
         if error is not None:
             set_clauses.append(f"error_message = ${param_idx}")
             params.append(error)
@@ -197,6 +220,24 @@ class JobRepository:
 
         async with pool.acquire() as conn:
             record = await conn.fetchrow(query, *params)
+            return self._record_to_dict(record)
+
+    async def increment_resume_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Atomically resets status to queued, clears error, and increments resume_count."""
+        pool = await self.get_pool()
+        now = datetime.now(timezone.utc)
+        query = """
+            UPDATE jobs
+            SET status = 'queued',
+                resume_count = COALESCE(resume_count, 0) + 1,
+                last_resumed_at = $1,
+                updated_at = $1,
+                error_message = NULL
+            WHERE id = $2
+            RETURNING *;
+        """
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(query, now, job_id)
             return self._record_to_dict(record)
 
 

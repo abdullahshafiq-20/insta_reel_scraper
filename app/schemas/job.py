@@ -22,6 +22,7 @@ class JobStage(str, Enum):
     DOWNLOADED = "downloaded"
     AUDIO_CONVERTED = "audio_converted"
     TRANSCRIBED = "transcribed"
+    OCR_PROCESSING = "ocr_processing"
     FINISHED = "finished"
 
 
@@ -85,20 +86,35 @@ class JobQueued(BaseModel):
     created_at: datetime
 
 
+class JobResumeResponse(BaseModel):
+    """Immediate 202 response returned when an interrupted/failed job is resumed."""
+    success: bool = True
+    job_id: str
+    status: JobStatus
+    stage: JobStage
+    resumed: bool = True
+    resume_count: int = 1
+    message: str
+
+
 class JobStatusResponse(BaseModel):
     """Polling response for GET /api/v1/jobs/{job_id}."""
     success: bool = True
     job_id: str
+    content_type: Optional[str] = "reel"
     status: JobStatus
     stage: JobStage
     current_queue: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    last_resumed_at: Optional[datetime] = None
+    resume_count: Optional[int] = 0
     # Populated once stage=metadata_extracted (Stage 1 complete)
     metadata: Optional[ReelMetadata] = None
     # Populated in later stages
     transcription: Optional[Dict[str, Any]] = None
+    ocr: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
 
