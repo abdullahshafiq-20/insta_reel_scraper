@@ -25,6 +25,24 @@ def is_valid_instagram_url(url: str) -> bool:
     return False
 
 
+def get_instagram_url_type(url: str) -> str:
+    """
+    Classify Instagram URL as 'reel' or 'post'.
+    Returns 'post' if path segment is 'p', otherwise 'reel' (reel, reels, tv).
+    """
+    try:
+        path = urlparse(url.strip()).path.strip("/").lower()
+        parts = [p for p in path.split("/") if p]
+        for part in parts:
+            if part in ("reel", "reels", "tv"):
+                return "reel"
+            if part == "p":
+                return "post"
+    except Exception:
+        pass
+    return "reel"
+
+
 def extract_shortcode(url: str) -> str:
     """Extract the unique Instagram shortcode from a Reel / Post URL."""
     path = urlparse(url).path.strip("/")

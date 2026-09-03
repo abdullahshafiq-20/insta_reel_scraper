@@ -29,9 +29,16 @@ class JobStage(str, Enum):
 # Nested payload models
 # ---------------------------------------------------------------------------
 
+class PostImageItem(BaseModel):
+    index: int = Field(..., description="1-based slide index")
+    src: str = Field(..., description="Direct CDN image URL")
+    alt: Optional[str] = Field(None, description="Image description / accessibility caption")
+
+
 class ReelMetadata(BaseModel):
     shortcode: str = Field(..., description="Unique Instagram shortcode")
     url: str = Field(..., description="Target Reel / Post URL")
+    post_type: str = Field("reel", description="Type of content: 'reel' or 'post'")
     username: Optional[str] = Field(None, description="Creator username")
     caption: Optional[str] = Field(None, description="Full caption text")
     hashtags: List[str] = Field(default_factory=list, description="Extracted hashtags")
@@ -44,6 +51,8 @@ class ReelMetadata(BaseModel):
         default_factory=list,
         description="All candidate video stream URLs ordered by quality",
     )
+    total_images: Optional[int] = Field(None, description="Total images in carousel or post")
+    images: List[PostImageItem] = Field(default_factory=list, description="Extracted carousel / post images")
     source: str = Field("headless_browser_dom", description="Extraction method")
 
 

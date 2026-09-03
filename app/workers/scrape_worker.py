@@ -16,9 +16,11 @@ from app.db.repository import job_repo
 from app.schemas.job import JobStage, JobStatus
 from app.services.media.audio_converter import audio_converter
 from app.services.media.downloader import downloader
+from app.services.scraper.instagram_post_scraper import get_instagram_post_scraper
 from app.services.scraper.instagram_scraper import get_instagram_scraper
 from app.services.transcription.openai_whisper import openai_transcription_service
 from app.services.webhook.dispatcher import dispatcher
+from app.utils.validators import get_instagram_url_type
 
 logger = logging.getLogger("insta.worker.pipeline")
 
@@ -29,7 +31,8 @@ async def process_scrape_job(
     webhook_url: Optional[str] = None,
 ) -> None:
     effective_webhook = (webhook_url or settings.WEBHOOK_URL or "").strip() or None
-    logger.info("Pipeline started for job %s (url=%s, webhook=%s)", job_id, url, effective_webhook)
+    content_type = get_instagram_url_type(url)
+    logger.info("Pipeline started for job %s (url=%s, type=%s, webhook=%s)", job_id, url, content_type, effective_webhook)
 
     video_path: Optional[str] = None
     audio_path: Optional[str] = None
@@ -47,8 +50,44 @@ async def process_scrape_job(
             job_id=job_id,
             status=JobStatus.PROCESSING.value,
             stage=JobStage.INITIALIZED.value,
+            data={"content_type": content_type},
         )
 
+        # -------------------------------------------------------------
+        # BRANCH A: INSTAGRAM POST / CAROUSEL PIPELINE
+        # -------------------------------------------------------------
+        if content_type == "post":
+            logger.info("[Job %s] Running Post/Carousel scraper", job_id)
+            post_scraper = get_instagram_post_scraper()
+            post_metadata = await post_scraper.scrape(url)
+
+            await job_repo.update_job(
+                job_id,
+                status=JobStatus.COMPLETED.value,
+                stage=JobStage.FINISHED.value,
+                metadata=post_metadata,
+                completed=True,
+                webhook_status="sent",
+            )
+
+            logger.info(
+                "[Job %s] Post pipeline completed successfully (%d images). Emitting final webhook",
+                job_id,
+                post_metadata.get("total_images", 1),
+            )
+            await dispatcher.dispatch(
+                webhook_url=effective_webhook,
+                event="job.completed",
+                job_id=job_id,
+                status=JobStatus.COMPLETED.value,
+                stage=JobStage.FINISHED.value,
+                data=post_metadata,
+            )
+            return
+
+        # -------------------------------------------------------------
+        # BRANCH B: INSTAGRAM REEL PIPELINE (Original & Untouched)
+        # -------------------------------------------------------------
         # 2. STAGE 1: METADATA EXTRACTION
         logger.info("[Job %s] Stage 1: Extracting Instagram metadata", job_id)
         scraper = get_instagram_scraper()
