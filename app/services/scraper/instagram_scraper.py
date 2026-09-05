@@ -135,6 +135,26 @@ _JS_EXTRACTOR = r"""
     }
   } catch (_) {}
 
+  // 7. Check for Carousel Next button or dots (Second Check for Carousel vs Reel)
+  result.has_next_button = false;
+  try {
+    const container = document.querySelector('article') || document.querySelector('main');
+    if (container) {
+      const nextBtn = container.querySelector(
+        'button[aria-label="Next"], button[aria-label*="Next" i], div[role="button"][aria-label*="Next" i]'
+      );
+      if (nextBtn && (nextBtn.offsetWidth > 0 || nextBtn.offsetHeight > 0 || nextBtn.offsetParent !== null)) {
+        result.has_next_button = true;
+      }
+    }
+  } catch (_) {}
+
+  result.has_carousel_dots = false;
+  try {
+    const dots = document.querySelectorAll('div._acvz div._acnb, div[role="tablist"] div[role="tab"]');
+    if (dots.length > 1) result.has_carousel_dots = true;
+  } catch (_) {}
+
   return result;
 }
 """
@@ -261,6 +281,13 @@ def _parse_page_data(html: str, shortcode: str, url: str, dom: Dict[str, Any]) -
     if result["caption"]:
         result["hashtags"] = parse_hashtags(result["caption"])
         result["mentions"] = parse_mentions(result["caption"])
+
+    # Second Check: Is this actually a carousel of images rather than a single reel?
+    has_sidecar = bool(re.search(r'"edge_sidecar_to_children":\s*\{\s*"edges":\s*(\[[^\]]+\])', html))
+    has_next_btn = bool(dom.get("has_next_button"))
+    has_dots = bool(dom.get("has_carousel_dots"))
+    result["is_carousel"] = has_next_btn or has_dots or has_sidecar
+    result["has_next_button"] = has_next_btn
 
     return result
 

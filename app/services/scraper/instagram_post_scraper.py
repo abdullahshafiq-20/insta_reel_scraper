@@ -140,12 +140,31 @@ _JS_POST_EXTRACTOR = r"""
     }
   } catch (_) {}
 
-  // 7. Check for Next button (indicates carousel)
+  // 7. Check for Next button (indicates carousel of images)
   try {
     const nextBtn = document.querySelector(
-      'button[aria-label*="Next" i], button[aria-label*="next" i], svg[aria-label*="Next" i]'
+      'button[aria-label*="Next" i], button[aria-label="Next"], svg[aria-label*="Next" i], [aria-label="Next"], div[role="button"][aria-label*="Next" i], article button[aria-label*="Next" i], main button[aria-label*="Next" i]'
     );
     if (nextBtn) result.has_next_button = true;
+  } catch (_) {}
+
+  // Check for video sources in DOM
+  result.video_url = null;
+  try {
+    for (const v of document.querySelectorAll('video')) {
+      const src = v.currentSrc || v.src || v.getAttribute('src');
+      if (src && src.startsWith('http')) {
+        result.video_url = src;
+        break;
+      }
+      for (const s of v.querySelectorAll('source')) {
+        const ss = s.src || s.getAttribute('src');
+        if (ss && ss.startsWith('http')) {
+          result.video_url = ss;
+          break;
+        }
+      }
+    }
   } catch (_) {}
 
   // 8. Extract currently visible / active main image
@@ -377,8 +396,33 @@ class InstagramPostScraper(BaseScraper):
         hashtags = parse_hashtags(caption) if caption else []
         mentions = parse_mentions(caption) if caption else []
 
+        # Second Check: Check if this post is actually a single video / Reel
+        video_url = dom.get("video_url")
+        if not video_url:
+            for vm in re.finditer(r'"video_versions":\s*(\[[^\]]+\])', html):
+                try:
+                    for item in json.loads(vm.group(1).replace(r"\/", "/")):
+                        v = item.get("url", "")
+                        if v:
+                            video_url = v
+                            break
+                    if video_url:
+                        break
+                except Exception:
+                    pass
+
+        has_next_btn = bool(dom.get("has_next_button"))
+        has_dots = bool(dom.get("total_dots", 0) > 1)
+        has_carousel = has_next_btn or has_dots or len(images) > 1
+        is_reel = bool(video_url and not has_carousel)
+
         result = {
-            "post_type": "post",
+            "post_type": "reel" if is_reel else "post",
+            "is_reel": is_reel,
+            "is_carousel": has_carousel,
+            "has_next_button": has_next_btn,
+            "video_url": video_url,
+            "video_urls_candidates": [video_url] if video_url else [],
             "shortcode": shortcode,
             "url": clean_url,
             "username": username,
