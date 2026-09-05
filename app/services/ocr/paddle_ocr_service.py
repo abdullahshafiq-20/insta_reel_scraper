@@ -32,6 +32,7 @@ class PaddleOCRService:
             logger.info("Initializing PaddleOCR engine (lang=%s)...", self.lang)
             try:
                 from paddleocr import PaddleOCR
+                self._ocr = PaddleOCR(use_angle_cls=True, lang=self.lang)
                 try:
                     self._ocr = PaddleOCR(use_textline_orientation=True, lang=self.lang)
                 except TypeError:
@@ -47,6 +48,9 @@ class PaddleOCRService:
         ocr = self._get_ocr_instance()
         raw = None
         try:
+            raw = ocr.ocr(image_path, cls=True)
+        except TypeError:
+            raw = ocr.ocr(image_path)
             if hasattr(ocr, "predict"):
                 raw = ocr.predict(image_path)
             else:
@@ -61,6 +65,27 @@ class PaddleOCRService:
         texts: List[str] = []
         scores: List[float] = []
 
+        if raw:
+            # Format A: dictionary response (PaddleX style: {'res': {'rec_texts': [...], 'rec_scores': [...]}})
+            if isinstance(raw, dict) and "res" in raw:
+                res_data = raw["res"]
+                rec_texts = res_data.get("rec_texts", [])
+                rec_scores = res_data.get("rec_scores", [])
+                texts = [str(t) for t in rec_texts if t]
+                scores = [round(float(s), 4) for s in rec_scores] if rec_scores is not None else []
+            # Format B: list containing dict
+            elif isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], dict) and "res" in raw[0]:
+                res_data = raw[0]["res"]
+                texts = [str(t) for t in res_data.get("rec_texts", []) if t]
+                scores = [round(float(s), 4) for s in res_data.get("rec_scores", [])]
+            # Format C: classic list of [[box, (text, score)], ...]
+            elif isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], list):
+                for line in raw[0]:
+                    if line and len(line) >= 2 and isinstance(line[1], (tuple, list)):
+                        txt, score = line[1][0], line[1][1]
+                        if txt:
+                            texts.append(str(txt))
+                            scores.append(round(float(score), 4))
         if raw is not None:
             raw_list = raw if isinstance(raw, (list, tuple)) else [raw]
 
