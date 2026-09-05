@@ -54,6 +54,10 @@ class ReelMetadata(BaseModel):
     )
     total_images: Optional[int] = Field(None, description="Total images in carousel or post")
     images: List[PostImageItem] = Field(default_factory=list, description="Extracted carousel / post images")
+    extracted_links: List[str] = Field(
+        default_factory=list,
+        description="All URLs/links extracted from caption, OCR, and transcription",
+    )
     source: str = Field("headless_browser_dom", description="Extraction method")
 
 
@@ -115,6 +119,7 @@ class JobStatusResponse(BaseModel):
     # Populated in later stages
     transcription: Optional[Dict[str, Any]] = None
     ocr: Optional[Dict[str, Any]] = None
+    extracted_links: List[str] = Field(default_factory=list, description="All extracted links")
     error: Optional[str] = None
 
 

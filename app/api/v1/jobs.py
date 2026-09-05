@@ -178,6 +178,11 @@ async def get_job(
         except Exception as exc:
             logger.warning("Could not parse stored metadata into ReelMetadata schema for job %s: %s", job_id, exc)
 
+    extracted_links = (
+        (record.get("metadata") or {}).get("extracted_links")
+        or []
+    )
+
     return JobStatusResponse(
         success=True,
         job_id=record["id"],
@@ -193,5 +198,6 @@ async def get_job(
         metadata=meta_obj,
         transcription=record.get("transcription"),
         ocr=record.get("ocr"),
+        extracted_links=extracted_links,
         error=record.get("error_message"),
     )

@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from app.config import settings
 from app.services.scraper.base import BaseScraper
 from app.services.scraper.browser_pool import PlaywrightBrowserPool, browser_pool
-from app.utils.validators import extract_shortcode, parse_hashtags, parse_mentions
+from app.utils.validators import extract_links, extract_shortcode, parse_hashtags, parse_mentions
 
 logger = logging.getLogger("insta.scraper")
 
@@ -281,6 +281,9 @@ def _parse_page_data(html: str, shortcode: str, url: str, dom: Dict[str, Any]) -
     if result["caption"]:
         result["hashtags"] = parse_hashtags(result["caption"])
         result["mentions"] = parse_mentions(result["caption"])
+        result["extracted_links"] = extract_links(result["caption"])
+    else:
+        result["extracted_links"] = []
 
     # Second Check: Is this actually a carousel of images rather than a single reel?
     has_sidecar = bool(re.search(r'"edge_sidecar_to_children":\s*\{\s*"edges":\s*(\[[^\]]+\])', html))

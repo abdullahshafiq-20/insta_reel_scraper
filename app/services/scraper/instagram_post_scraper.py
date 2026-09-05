@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from app.config import settings
 from app.services.scraper.base import BaseScraper
 from app.services.scraper.browser_pool import PlaywrightBrowserPool, browser_pool
-from app.utils.validators import extract_shortcode, parse_hashtags, parse_mentions
+from app.utils.validators import extract_links, extract_shortcode, parse_hashtags, parse_mentions
 
 logger = logging.getLogger("insta.post_scraper")
 
@@ -395,6 +395,7 @@ class InstagramPostScraper(BaseScraper):
 
         hashtags = parse_hashtags(caption) if caption else []
         mentions = parse_mentions(caption) if caption else []
+        caption_links = extract_links(caption) if caption else []
 
         # Second Check: Check if this post is actually a single video / Reel
         video_url = dom.get("video_url")
@@ -429,6 +430,7 @@ class InstagramPostScraper(BaseScraper):
             "caption": caption,
             "hashtags": hashtags,
             "mentions": mentions,
+            "extracted_links": caption_links,
             "like_count_raw": like_count,
             "comment_count_raw": comment_count,
             "total_images": total_images,

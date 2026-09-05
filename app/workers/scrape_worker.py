@@ -28,7 +28,7 @@ from app.services.scraper.instagram_post_scraper import get_instagram_post_scrap
 from app.services.scraper.instagram_scraper import get_instagram_scraper
 from app.services.transcription.openai_whisper import openai_transcription_service
 from app.services.webhook.dispatcher import dispatcher
-from app.utils.validators import get_instagram_url_type
+from app.utils.validators import extract_links, get_instagram_url_type
 
 logger = logging.getLogger("insta.worker.pipeline")
 
@@ -122,11 +122,24 @@ async def _process_post_ocr(
             },
         )
 
-    # 3. Final Aggregation & Completion
+    # 3. Final Aggregation & Link Extraction
     all_slides = sorted(completed_slides.values(), key=lambda x: x["index"])
     combined_text = "\n\n".join(
         [f"--- Image {s['index']} ---\n{s['full_text']}" for s in all_slides if s.get("full_text")]
     )
+
+    # Extract all links across caption, OCR text, and image alts
+    all_text_sources = [post_metadata.get("caption") or ""]
+    for s in all_slides:
+        all_text_sources.append(s.get("full_text") or "")
+        all_text_sources.extend(s.get("texts") or [])
+    for img in post_metadata.get("images", []):
+        if img.get("alt"):
+            all_text_sources.append(img["alt"])
+
+    extracted_links = extract_links("\n".join(all_text_sources))
+    post_metadata["extracted_links"] = extracted_links
+
     final_ocr_payload = {
         "total_images": total_images,
         "combined_text": combined_text,
@@ -135,12 +148,14 @@ async def _process_post_ocr(
     final_post_data = {
         "metadata": post_metadata,
         "ocr": final_ocr_payload,
+        "extracted_links": extracted_links,
     }
 
     await job_repo.update_job(
         job_id,
         status=JobStatus.COMPLETED.value,
         stage=JobStage.FINISHED.value,
+        metadata=post_metadata,
         ocr=final_ocr_payload,
         completed=True,
         webhook_status="sent",
@@ -226,16 +241,23 @@ async def _process_reel_media(
             duration_seconds=duration_seconds,
         )
 
-        # Stage 4: Completion & Aggregation
+        # Stage 4: Completion & Link Extraction across caption & transcript
+        caption_text = metadata.get("caption") or ""
+        transcript_text = transcription_result.get("text") or ""
+        extracted_links = extract_links(f"{caption_text}\n{transcript_text}")
+        metadata["extracted_links"] = extracted_links
+
         final_payload = {
             "metadata": metadata,
             "transcription": transcription_result,
+            "extracted_links": extracted_links,
         }
 
         await job_repo.update_job(
             job_id,
             status=JobStatus.COMPLETED.value,
             stage=JobStage.FINISHED.value,
+            metadata=metadata,
             transcription=transcription_result,
             completed=True,
             webhook_status="sent",
